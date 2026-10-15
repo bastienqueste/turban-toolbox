@@ -9,7 +9,6 @@ from turban.instruments.mss import mss_mrd
 from turban.instruments.mss.api import mrd_to_level1
 from turban.instruments.mss.config import MssDeviceConfig
 from turban.instruments.mss.mss_mrd import read_mrd, level0_to_level1, raw_to_level0
-from turban.process.utemp.level3 import get_noise
 from turban.process.utemp.api import UTempConfig, UTempProcessing
 from turban.utils.util import define_sections
 from turban.instruments.mss.mss_utils import deconvolve_mss_ntchp

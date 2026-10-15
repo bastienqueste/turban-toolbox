@@ -89,6 +89,80 @@ tm = 0.8 + 1.25 / np.sqrt(num_spec_points)
 ```
 
 
+## Microtemperature processing
+
+Microtemperature processing estimates the dissipation rate of temperature variance, chi, from fast thermistors (e.g. FP07). It follows the same four levels as shear processing:
+
+| Level | Class | Content |
+|---|---|---|
+| 1 | `UTempLevel1` | dT/dt [K s-1] of each thermistor, speed through water, section markers |
+| 2 | `UTempLevel2` | as Level 1 (no despiking of temperature gradients yet) |
+| 3 | `UTempLevel3` | wavenumber spectra of dT/dz, corrected for the FP07 response, plus a noise spectrum |
+| 4 | `UTempLevel4` | chi, epsilon from the Batchelor wavenumber, fit diagnostics and quality flags, one estimate per spectrum model |
+
+Instrument readers produce Level 1 (see [MicroRider](urider.md)); any other source of dT/dt can be used by building `UTempLevel1` directly. Temperature itself is passed as auxiliary data `temp`, aggregated to `temp_mean`, and is used for viscosity, thermal diffusivity and the electronics noise model.
+
+```{.python notest}
+from turban.process.utemp.api import UTempLevel1, UTempProcessing
+from turban.process.utemp.config import UTempConfig
+
+cfg = UTempConfig(
+    sampfreq=512.0,
+    segment_length=1024, segment_overlap=512,
+    chunk_length=3072, chunk_overlap=1536,
+    spectrum_models=("batchelor", "kraichnan"),
+)
+level1 = UTempLevel1(time=time, dtempdt=dtempdt, senspeed=speed, section_number=section, cfg=cfg)
+level1.add_aux_data({"temp": (["n_temp", "time"], temp, {"mean": "temp_mean"})})
+level4 = UTempProcessing(level1).level4
+level4.chi  # (spectrum model, thermistor, time)
+```
+
+### Choosing what is computed
+
+| Option | Default | Meaning |
+|---|---|---|
+| `spectrum_models` | `("batchelor", "kraichnan")` | Theoretical spectra fitted; each gives its own estimate along the `spectrum_model` dimension. `q_batchelor=3.7`, `q_kraichnan=5.26` (Piccolroaz et al. 2021). |
+| `fp07_response` | `"nash99"` | FP07 transfer function: `"nash99"` (single pole, tau = 7 ms U^-0.12), `"rsi"` (double pole, 4.1 ms U^-0.5), `"gm"`, `"koc"`, `"nash02"`, `"sommer"`, `"none"` or `"custom"` (set `fp07_tau0`, `fp07_speed_exponent`, `fp07_poles`). |
+| `noise_model` | `"empirical"` | `"empirical"`: geometric mean of the quietest `noise_percentile` % of spectra of each thermistor. `"electronics"`: RSI thermistor circuit model, requires `thermistor_electronics` (filled in by the MicroRider reader) and temperature. |
+| `chi_from_shear` | `False` | Also compute chi with k_B fixed from shear epsilon (Piccolroaz et al. 2021, chi_ST), stored in `chi_shear`. |
+| `shear_constrained_fit` | `False` | Restrict the maximum-likelihood search for k_B to shear epsilon within ±2 standard deviations of ln(eps). |
+
+The fit is a port of the three-pass maximum likelihood method of ODAS (Ruddick et al. 2000): a first fit over a wavenumber range bounded by the noise, the FP07 response (`response_limit`) and the anti-aliasing filter; then the range is refined from the fitted k_B (Luketina & Imberger 2001 and Steinbuck et al. 2009 lower limit, signal-to-noise and spectral minimum upper limit); then a final fit. Chi is the observed variance in the fit range plus the theoretical variance outside it. Epsilon follows from k_B as eps = nu D^2 (2 pi k_B)^4.
+
+### Shear epsilon
+
+Shear-derived epsilon is attached to Level 3 with `add_shear_dissipation`. The shear and temperature processing must use the same chunking so that estimates line up; probes that fail quality control are left out of the geometric mean.
+
+```{.python notest}
+from turban.process.utemp.api import UTempLevel2, UTempLevel3, UTempLevel4
+
+cfg.chi_from_shear = True
+level3 = UTempLevel3.from_level_below(UTempLevel2.from_level_below(level1))
+level3.add_shear_dissipation(
+    shear_level4.eps,
+    quality_metric=shear_level4.quality_metric,
+    log_diss_var=shear_level4.log_diss_var,  # optional, used by the constrained fit
+)
+level4 = UTempLevel4.from_level_below(level3)
+level4.chi_shear
+```
+
+### Quality control
+
+`quality_metric` (and `quality_metric_shear`, which uses only `MAD`, `SNR` and `NO_ESTIMATE`) are bit flags; 0 is a good estimate.
+
+| Bit | Name | Set when |
+|---|---|---|
+| 1 | `MAD` | mean absolute deviation of observed/model exceeds `mad_factor` x sqrt(2/dof) |
+| 2 | `SNR` | spectral signal-to-noise ratio below `snr_qc_limit` |
+| 4 | `LIKELIHOOD_RATIO` | likelihood ratio of model over a power law below `likelihood_ratio_limit` (`None` disables) |
+| 8 | `FIT_RANGE` | fit range does not start below the spectral peak, spans less than 0.8 decades, or ends below twice the peak wavenumber (after Piccolroaz et al. 2021, eq. 17) |
+| 16 | `EPS_LIMIT` | epsilon above `eps_fit_upper_limit` |
+| 32 | `NO_ESTIMATE` | no fit was possible |
+
+Flags are defined in `turban.process.utemp.level4.QualityFlag`.
+
 ## Sections, segments, and chunks
 
 ### Nomenclature

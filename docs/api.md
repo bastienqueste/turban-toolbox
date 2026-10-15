@@ -42,6 +42,10 @@ This page provides the technical documentation for the functions and classes wit
 
 ::: turban.instruments.microrider.rsIO
 
+### MicroRider processing levels (`instruments/microrider/api.py`)
+
+::: turban.instruments.microrider.api
+
 ---
 
 ## Data Processing
@@ -70,6 +74,14 @@ This page provides the technical documentation for the functions and classes wit
 
 ::: turban.process.utemp.config
 
+### Microtemperature spectra (`process/utemp/level3.py`)
+
+::: turban.process.utemp.level3
+
+### Microtemperature spectral fitting (`process/utemp/level4.py`)
+
+::: turban.process.utemp.level4
+
 ---
 
 ## Utilities
@@ -89,6 +101,10 @@ This page provides the technical documentation for the functions and classes wit
 ### CTD utilities (`utils/ctd.py`)
 
 ::: turban.utils.ctd
+
+### Seawater properties (`utils/seawater.py`)
+
+::: turban.utils.seawater
 
 ### File paths and data download (`utils/filepaths.py`)
 
